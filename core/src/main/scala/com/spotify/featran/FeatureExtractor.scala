@@ -27,8 +27,8 @@ import scala.reflect.ClassTag
  * @tparam M input collection type, e.g. `Array`, List
  * @tparam T input record type to extract features from
  */
-class FeatureExtractor[M[+ _]: CollectionType, T] private[featran] (
-  private val fs: M[FeatureSet[T]],
+class FeatureExtractor[M[_]: CollectionType, T] private[featran] (
+  private val fs: M[_ <: FeatureSet[T]],
   @transient private val input: M[T],
   @transient private val settings: Option[M[String]])
     extends Serializable {
@@ -40,21 +40,21 @@ class FeatureExtractor[M[+ _]: CollectionType, T] private[featran] (
 
   @transient private[featran] lazy val as: M[(T, ARRAY)] = {
     val g = fs // defeat closure
-    g.flatMap(h => input.map(o => (o, h.unsafeGet(o))))
+    input.cross(g).map { case (in, spec) => (in, spec.unsafeGet(in)) }
   }
   @transient private[featran] lazy val aggregate: M[ARRAY] = settings match {
     case Some(x) =>
-      x.flatMap { s =>
-        import io.circe.generic.auto._
-        import io.circe.parser._
-        fs.map(_.decodeAggregators(decode[Seq[Settings]](s).right.get))
+      fs.cross(x).map {
+        case (spec, s) =>
+          import io.circe.generic.auto._
+          import io.circe.parser._
+          spec.decodeAggregators(decode[Seq[Settings]](s).right.get)
       }
     case None =>
-      fs.flatMap { x =>
-        as.map(t => x.unsafePrepare(t._2))
-          .reduce(x.unsafeSum)
-          .map(x.unsafePresent)
-      }
+      fs.cross(as)
+        .map { case (spec, (_, array)) => (spec, spec.unsafePrepare(array)) }
+        .reduce { case ((spec, a), (_, b)) => (spec, spec.unsafeSum(a, b)) }
+        .map { case (spec, array) => spec.unsafePresent(array) }
   }
 
   /**
@@ -66,12 +66,11 @@ class FeatureExtractor[M[+ _]: CollectionType, T] private[featran] (
   @transient lazy val featureSettings: M[String] = settings match {
     case Some(x) => x
     case None =>
-      fs.flatMap { x =>
-        aggregate.map { a =>
+      fs.cross(aggregate).map {
+        case (spec, array) =>
           import io.circe.generic.auto._
           import io.circe.syntax._
-          x.featureSettings(a).asJson.noSpaces
-        }
+          spec.featureSettings(array).asJson.noSpaces
       }
   }
 
@@ -79,7 +78,7 @@ class FeatureExtractor[M[+ _]: CollectionType, T] private[featran] (
    * Names of the extracted features, in the same order as values in [[featureValues]].
    */
   @transient lazy val featureNames: M[Seq[String]] =
-    fs.flatMap(x => aggregate.map(x.featureNames))
+    fs.cross(aggregate).map(x => x._1.featureNames(x._2))
 
   /**
    * Values of the extracted features, in the same order as names in [[featureNames]].
@@ -96,13 +95,11 @@ class FeatureExtractor[M[+ _]: CollectionType, T] private[featran] (
    *           `DenseVector[Double]`
    */
   def featureResults[F: FeatureBuilder: ClassTag]: M[FeatureResult[F, T]] = {
-    fs.flatMap { x =>
-      val fb = CrossingFeatureBuilder(implicitly[FeatureBuilder[F]].newBuilder, x.crossings)
-      as.cross(aggregate).map {
-        case ((o, a), c) =>
-          x.featureValues(a, c, fb)
-          FeatureResult(fb.result, fb.rejections, o)
-      }
+    fs.cross(as.cross(aggregate)).map {
+      case (spec, ((o, a), c)) =>
+        val fb = CrossingFeatureBuilder(implicitly[FeatureBuilder[F]].newBuilder, spec.crossings)
+        spec.featureValues(a, c, fb)
+        FeatureResult(fb.result, fb.rejections, o)
     }
   }
 }
@@ -116,8 +113,7 @@ class RecordExtractor[T, F: FeatureBuilder: ClassTag] private[featran] (fs: Feat
   private implicit val iteratorCollectionType: CollectionType[Iterator] =
     new CollectionType[Iterator] {
       override def map[A, B: ClassTag](ma: Iterator[A], f: A => B): Iterator[B] = ma.map(f)
-      override def flatMap[A, B: ClassTag](ma: Iterator[A], f: A => Iterator[B]) = ma.flatMap(f)
-      override def pure[A](a: A): Iterator[A] = new Iterator[A]()
+      override def pure[A: ClassTag](ma: Iterator[_], a: A): Iterator[A] = Iterator[A](a)
       override def reduce[A](ma: Iterator[A], f: (A, A) => A): Iterator[A] = ???
       override def cross[A, B: ClassTag](ma: Iterator[A], mb: Iterator[B]): Iterator[(A, B)] = {
         val b = mb.next()
@@ -133,7 +129,9 @@ class RecordExtractor[T, F: FeatureBuilder: ClassTag] private[featran] (fs: Feat
     override def initialValue(): State = {
       val input: PipeIterator = new PipeIterator
       val extractor: FeatureExtractor[Iterator, T] =
-        new FeatureExtractor[Iterator, T](fs, input, Some(Iterator.continually(settings)))
+        new FeatureExtractor[Iterator, T](Iterator.continually(fs),
+                                          input,
+                                          Some(Iterator.continually(settings)))
       val output: Iterator[FeatureResult[F, T]] = extractor.featureResults
 
       State(input, extractor, output)

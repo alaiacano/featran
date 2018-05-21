@@ -110,7 +110,10 @@ class FeatureSpec[T] private[featran] (private[featran] val features: Array[Feat
    * @tparam M input collection type, e.g. `Array`, `List`
    */
   def extract[M[_]: CollectionType](input: M[T]): FeatureExtractor[M, T] = {
-    val fs = implicitly[CollectionType[M]].pure(new FeatureSet[T](features, crossings))
+    val ct: CollectionType[M] = implicitly[CollectionType[M]]
+    import ct.Ops._
+
+    val fs = input.pure(new FeatureSet[T](features, crossings))
     new FeatureExtractor[M, T](fs, input, None)
   }
 
@@ -124,8 +127,11 @@ class FeatureSpec[T] private[featran] (private[featran] val features: Array[Feat
   def extract[M[_]: CollectionType](
     input: M[T],
     predicate: Feature[T, _, _, _] => Boolean): FeatureExtractor[M, T] = {
+    val ct: CollectionType[M] = implicitly[CollectionType[M]]
+    import ct.Ops._
+
     val filteredFeatures = features.filter(predicate)
-    val fs = implicitly[CollectionType[M]].pure(new FeatureSet[T](filteredFeatures, crossings))
+    val fs = input.pure(new FeatureSet[T](filteredFeatures, crossings))
 
     new FeatureExtractor[M, T](fs, input, None)
   }
@@ -139,23 +145,42 @@ class FeatureSpec[T] private[featran] (private[featran] val features: Array[Feat
    * @param settings JSON settings from a previous session
    * @tparam M input collection type, e.g. `Array`, `List`
    */
-  def extractWithSettings[M[_]: CollectionType](input: M[T],
-                                                settings: M[String]): FeatureExtractor[M, T] = {
-
-//    val filteredFeatures: M[FeatureSet] = settings.map(_ => new FeatureSet[](filtered, crossings))
+  def extractWithSettingsOverride[M[_]: CollectionType](
+    input: M[T],
+    settings: M[String]): FeatureExtractor[M, T] = {
     val dt: CollectionType[M] = implicitly[CollectionType[M]]
     import dt.Ops._
 
     val featureSet = settings.map { s =>
       import io.circe.generic.auto._
       import io.circe.parser._
+
       val settingsJson = decode[Seq[Settings]](s).right.get
       val filteredFeatures = features.filter { f =>
         settingsJson.exists(x => x.name == f.transformer.name)
       }
-      new FeatureSet(filteredFeatures, crossings)
+
+      new FeatureSet[T](filteredFeatures, crossings)
     }
 
+    new FeatureExtractor[M, T](featureSet, input, Some(settings))
+  }
+
+  /**
+   * Extract features from an input collection using settings from a previous session.
+   *
+   * This bypasses the `reduce` step in [[extract]] and uses feature summary from settings exported
+   * in a previous session.
+   * @param input input collection
+   * @param settings JSON settings from a previous session
+   * @tparam M input collection type, e.g. `Array`, `List`
+   */
+  def extractWithSettings[M[_]: CollectionType](input: M[T],
+                                                settings: M[String]): FeatureExtractor[M, T] = {
+    val ct: CollectionType[M] = implicitly[CollectionType[M]]
+    import ct.Ops._
+
+    val featureSet = input.pure(new FeatureSet(features, crossings))
     new FeatureExtractor[M, T](featureSet, input, Some(settings))
   }
 

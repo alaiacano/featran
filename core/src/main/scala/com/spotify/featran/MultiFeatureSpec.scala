@@ -54,8 +54,10 @@ class MultiFeatureSpec[T](private[featran] val mapping: Map[String, Int],
    * @tparam M input collection type, e.g. `Array`, `List`
    */
   def extract[M[_]: CollectionType](input: M[T]): MultiFeatureExtractor[M, T] = {
-    val fs =
-      implicitly[CollectionType[M]].pure(new MultiFeatureSet[T](features, crossings, mapping))
+    val ct: CollectionType[M] = implicitly[CollectionType[M]]
+    import ct.Ops._
+
+    val fs = input.pure(new MultiFeatureSet[T](features, crossings, mapping))
     new MultiFeatureExtractor[M, T](fs, input, None)
   }
 
@@ -69,9 +71,11 @@ class MultiFeatureSpec[T](private[featran] val mapping: Map[String, Int],
   def extract[M[_]: CollectionType](
     input: M[T],
     predicate: Feature[T, _, _, _] => Boolean): MultiFeatureExtractor[M, T] = {
+    val ct: CollectionType[M] = implicitly[CollectionType[M]]
+    import ct.Ops._
+
     val filteredFeatures = features.filter(predicate)
-    val fs = implicitly[CollectionType[M]]
-      .pure(new MultiFeatureSet[T](filteredFeatures, crossings, mapping))
+    val fs = input.pure(new MultiFeatureSet[T](filteredFeatures, crossings, mapping))
 
     new MultiFeatureExtractor[M, T](fs, input, None)
   }
