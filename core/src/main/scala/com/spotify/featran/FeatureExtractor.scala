@@ -27,7 +27,7 @@ import scala.reflect.ClassTag
  * @tparam M input collection type, e.g. `Array`, List
  * @tparam T input record type to extract features from
  */
-class FeatureExtractor[M[_]: CollectionType, T: ClassTag] private[featran] (
+class FeatureExtractor[M[_]: CollectionType, T] private[featran] (
   private val fs: M[FeatureSet[T]],
   @transient private val input: M[T],
   @transient private val settings: Option[M[String]])
@@ -107,9 +107,8 @@ class FeatureExtractor[M[_]: CollectionType, T: ClassTag] private[featran] (
 case class FeatureResult[F, T](value: F, rejections: Map[String, FeatureRejection], original: T)
 
 /** Encapsulate [[RecordExtractor]] for extracting individual records. */
-class RecordExtractor[T: ClassTag, F: FeatureBuilder: ClassTag] private[featran] (
-  fs: FeatureSet[T],
-  settings: String) {
+class RecordExtractor[T, F: FeatureBuilder: ClassTag] private[featran] (fs: FeatureSet[T],
+                                                                        settings: String) {
 
   private implicit val iteratorCollectionType: CollectionType[Iterator] =
     new CollectionType[Iterator] {

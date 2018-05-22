@@ -26,7 +26,7 @@ import scala.reflect.ClassTag
  * Companion object for [[MultiFeatureSpec]].
  */
 object MultiFeatureSpec {
-  def apply[T: ClassTag](specs: FeatureSpec[T]*): MultiFeatureSpec[T] = {
+  def apply[T](specs: FeatureSpec[T]*): MultiFeatureSpec[T] = {
     val nameToSpec: Map[String, Int] = specs.zipWithIndex.flatMap {
       case (spec, index) =>
         spec.features.map(_.transformer.name -> index)
@@ -41,9 +41,9 @@ object MultiFeatureSpec {
 /**
  * Wrapper for [[FeatureSpec]] that allows for combination and separation of different specs.
  */
-class MultiFeatureSpec[T: ClassTag](private[featran] val mapping: Map[String, Int],
-                                    private[featran] val features: Array[Feature[T, _, _, _]],
-                                    private val crossings: Crossings) {
+class MultiFeatureSpec[T](private[featran] val mapping: Map[String, Int],
+                          private[featran] val features: Array[Feature[T, _, _, _]],
+                          private val crossings: Crossings) {
 
   /**
    * Extract features from a input collection.
@@ -96,17 +96,8 @@ class MultiFeatureSpec[T: ClassTag](private[featran] val mapping: Map[String, In
     val dt: CollectionType[M] = implicitly[CollectionType[M]]
     import dt.Ops._
 
-    val featureSet = settings.map { s =>
-      import io.circe.generic.auto._
-      import io.circe.parser._
-      val settingsJson = decode[Seq[Settings]](s).right.get
-      val filteredFeatures = features.filter { f =>
-        settingsJson.exists(x => x.name == f.transformer.name)
-      }
-      new MultiFeatureSet(features, crossings, mapping)
-    }
-    val asd: M[MultiFeatureSet[T]] = input.pure(new MultiFeatureSet(features, crossings, mapping))
-    new MultiFeatureExtractor[M, T](asd, input, Some(settings))
+    val fs = input.pure(new MultiFeatureSet(features, crossings, mapping))
+    new MultiFeatureExtractor[M, T](fs, input, Some(settings))
   }
 
 }

@@ -26,7 +26,7 @@ import scala.language.{higherKinds, implicitConversions}
  * @tparam M input collection type, e.g. `Array`, List
  * @tparam T input record type to extract features from
  */
-class MultiFeatureExtractor[M[_]: CollectionType, T: ClassTag] private[featran] (
+class MultiFeatureExtractor[M[_]: CollectionType, T] private[featran] (
   private val fs: M[MultiFeatureSet[T]],
   @transient private val input: M[T],
   @transient private val settings: Option[M[String]])
