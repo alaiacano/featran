@@ -21,6 +21,7 @@ import com.twitter.algebird.HyperLogLogMonoid
 import org.scalacheck._
 
 import scala.math.ceil
+import scala.reflect.ClassTag
 
 object HashNHotEncoderSpec extends TransformerProp("HashNHotEncoder") {
 
@@ -31,9 +32,10 @@ object HashNHotEncoderSpec extends TransformerProp("HashNHotEncoder") {
     xs.flatten.map(m.toHLL(_)).reduce(m.plus).estimatedSize
   }
 
-  override implicit def list[T](implicit arb: Arbitrary[T]): Arbitrary[List[T]] = Arbitrary {
-    Gen.listOfN(10, arb.arbitrary).suchThat(_.nonEmpty) // workaround for shrinking failure
-  }
+  override implicit def list[T: ClassTag](implicit arb: Arbitrary[T]): Arbitrary[List[T]] =
+    Arbitrary {
+      Gen.listOfN(10, arb.arbitrary).suchThat(_.nonEmpty) // workaround for shrinking failure
+    }
 
   property("default") = Prop.forAll { xs: List[List[String]] =>
     val size = ceil(estimateSize(xs) * 8.0).toInt

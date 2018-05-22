@@ -27,8 +27,8 @@ import scala.reflect.ClassTag
  * @tparam M input collection type, e.g. `Array`, List
  * @tparam T input record type to extract features from
  */
-class FeatureExtractor[M[_]: CollectionType, T] private[featran] (
-  private val fs: M[_ <: FeatureSet[T]],
+class FeatureExtractor[M[_]: CollectionType, T: ClassTag] private[featran] (
+  private val fs: M[FeatureSet[T]],
   @transient private val input: M[T],
   @transient private val settings: Option[M[String]])
     extends Serializable {
@@ -44,15 +44,15 @@ class FeatureExtractor[M[_]: CollectionType, T] private[featran] (
   }
   @transient private[featran] lazy val aggregate: M[ARRAY] = settings match {
     case Some(x) =>
-      fs.cross(x).map {
-        case (spec, s) =>
+      x.cross(fs).map {
+        case (s, spec) =>
           import io.circe.generic.auto._
           import io.circe.parser._
           spec.decodeAggregators(decode[Seq[Settings]](s).right.get)
       }
     case None =>
-      fs.cross(as)
-        .map { case (spec, (_, array)) => (spec, spec.unsafePrepare(array)) }
+      as.cross(fs)
+        .map { case ((_, array), spec) => (spec, spec.unsafePrepare(array)) }
         .reduce { case ((spec, a), (_, b)) => (spec, spec.unsafeSum(a, b)) }
         .map { case (spec, array) => spec.unsafePresent(array) }
   }
@@ -66,8 +66,8 @@ class FeatureExtractor[M[_]: CollectionType, T] private[featran] (
   @transient lazy val featureSettings: M[String] = settings match {
     case Some(x) => x
     case None =>
-      fs.cross(aggregate).map {
-        case (spec, array) =>
+      aggregate.cross(fs).map {
+        case (array, spec) =>
           import io.circe.generic.auto._
           import io.circe.syntax._
           spec.featureSettings(array).asJson.noSpaces
@@ -78,7 +78,7 @@ class FeatureExtractor[M[_]: CollectionType, T] private[featran] (
    * Names of the extracted features, in the same order as values in [[featureValues]].
    */
   @transient lazy val featureNames: M[Seq[String]] =
-    fs.cross(aggregate).map(x => x._1.featureNames(x._2))
+    aggregate.cross(fs).map(x => x._2.featureNames(x._1))
 
   /**
    * Values of the extracted features, in the same order as names in [[featureNames]].
@@ -95,8 +95,8 @@ class FeatureExtractor[M[_]: CollectionType, T] private[featran] (
    *           `DenseVector[Double]`
    */
   def featureResults[F: FeatureBuilder: ClassTag]: M[FeatureResult[F, T]] = {
-    fs.cross(as.cross(aggregate)).map {
-      case (spec, ((o, a), c)) =>
+    as.cross(aggregate).cross(fs).map {
+      case (((o, a), c), spec) =>
         val fb = CrossingFeatureBuilder(implicitly[FeatureBuilder[F]].newBuilder, spec.crossings)
         spec.featureValues(a, c, fb)
         FeatureResult(fb.result, fb.rejections, o)
@@ -107,8 +107,9 @@ class FeatureExtractor[M[_]: CollectionType, T] private[featran] (
 case class FeatureResult[F, T](value: F, rejections: Map[String, FeatureRejection], original: T)
 
 /** Encapsulate [[RecordExtractor]] for extracting individual records. */
-class RecordExtractor[T, F: FeatureBuilder: ClassTag] private[featran] (fs: FeatureSet[T],
-                                                                        settings: String) {
+class RecordExtractor[T: ClassTag, F: FeatureBuilder: ClassTag] private[featran] (
+  fs: FeatureSet[T],
+  settings: String) {
 
   private implicit val iteratorCollectionType: CollectionType[Iterator] =
     new CollectionType[Iterator] {

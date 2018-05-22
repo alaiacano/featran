@@ -34,12 +34,12 @@ object FeatureSpec {
    * Create a new [[FeatureSpec]] for input record type `T`.
    * @tparam T input record type to extract features from
    */
-  def of[T]: FeatureSpec[T] = new FeatureSpec[T](Array.empty, Crossings.empty)
+  def of[T: ClassTag]: FeatureSpec[T] = new FeatureSpec[T](Array.empty, Crossings.empty)
 
   /**
    * Combine multiple [[FeatureSpec]]s into a single spec.
    */
-  def combine[T](specs: FeatureSpec[T]*): FeatureSpec[T] = {
+  def combine[T: ClassTag](specs: FeatureSpec[T]*): FeatureSpec[T] = {
     require(specs.nonEmpty, "Empty specs")
     new FeatureSpec(specs.map(_.features).reduce(_ ++ _), specs.map(_.crossings).reduce(_ ++ _))
   }
@@ -49,8 +49,9 @@ object FeatureSpec {
  * Encapsulate specification for feature extraction and transformation.
  * @tparam T input record type to extract features from
  */
-class FeatureSpec[T] private[featran] (private[featran] val features: Array[Feature[T, _, _, _]],
-                                       private[featran] val crossings: Crossings) {
+class FeatureSpec[T: ClassTag] private[featran] (
+  private[featran] val features: Array[Feature[T, _, _, _]],
+  private[featran] val crossings: Crossings) {
 
   /**
    * Add a required field specification.
